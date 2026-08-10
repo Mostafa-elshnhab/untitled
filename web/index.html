@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base href="$FLUTTER_BASE_HREF">
+  <meta charset="UTF-8">
+  <title>نظام قراءة الميزان</title>
+  <link rel="manifest" href="manifest.json">
+</head>
+<body>
+  <script>
+    let port;
+    let reader;
+    let latestWeight = "0.0";
+    let isConnected = false;
+    let keepReading = true;
+
+    async function connectScale() {
+      // التأكد من أن المتصفح يدعم السيريال (الكابل) وليس البلوتوث
+      if (!navigator.serial) {
+        alert("متصفحك لا يدعم الوصول للكابل (Web Serial). يرجى استخدام أحدث نسخة من Chrome أو Edge على الكمبيوتر.");
+        return false;
+      }
+
+      try {
+        // طلب تصريح للوصول للمنفذ (هذه الدالة تفتح نافذة منافذ السيريال/الكابل)
+        port = await navigator.serial.requestPort();
+
+        await port.open({
+          baudRate: 9600,
+          dataBits: 8,
+          stopBits: 1,
+          parity: "none",
+          flowControl: "none"
+        });
+
+        isConnected = true;
+        keepReading = true;
+        startReadLoop();
+
+        console.log("تم الاتصال بالكابل بنجاح");
+        return true;
+      } catch (error) {
+        console.error("خطأ في الاتصال بالكابل:", error);
+        if (error.name === 'SecurityError') {
+          alert("خطأ أمني: يجب تشغيل الموقع عبر HTTPS أو Localhost للسماح باستخدام الكابل.");
+        }
+        return false;
+      }
+    }
+
+    async function startReadLoop() {
+      const decoder = new TextDecoder();
+      while (port.readable && keepReading) {
+        reader = port.readable.getReader();
+        try {
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            const chunk = decoder.decode(value);
+            // استخراج الرقم الأخير من القراءة
+            const matches = chunk.match(/[0-9.]+/g);
+            if (matches && matches.length > 0) {
+              latestWeight = matches[matches.length - 1];
+            }
+          }
+        } catch (error) {
+          console.error("خطأ أثناء القراءة:", error);
+          isConnected = false;
+          break;
+        } finally {
+          reader.releaseLock();
+        }
+      }
+    }
+
+    function getLiveWeight() { return latestWeight; }
+    function isScaleConnected() { return isConnected; }
+    async function disconnectScale() {
+      keepReading = false;
+      if (reader) await reader.cancel();
+      if (port) await port.close();
+      isConnected = false;
+    }
+  </script>
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+</html>
