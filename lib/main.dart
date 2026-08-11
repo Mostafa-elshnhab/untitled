@@ -42,6 +42,7 @@ class _ScaleHomePageState extends State<ScaleHomePage> {
   // خاص لسطح المكتب
   SerialPort? _desktopPort;
   SerialPortReader? _reader;
+  String _desktopBuffer = ""; // مخزن مؤقت لنسخة سطح المكتب
 
   // --- منطق الويب (Web Logic) ---
   Future<void> _toggleWebConnection() async {
@@ -102,14 +103,39 @@ class _ScaleHomePageState extends State<ScaleHomePage> {
 
             _reader = SerialPortReader(_desktopPort!);
             _reader!.stream.listen((data) {
-              final String text = String.fromCharCodes(data);
-              final matches = RegExp(r'[0-9.]+').allMatches(text);
-              if (matches.isNotEmpty) {
-                if (mounted) setState(() => _weight = matches.last.group(0)!);
+              // 1. تحويل البيانات القادمة إلى نص وإضافتها للمخزن
+              final String chunk = String.fromCharCodes(data);
+              _desktopBuffer += chunk;
+
+              // 2. البحث عن علامة نهاية السطر (التي يرسلها الميزان عادةً)
+              if (_desktopBuffer.contains('\r') || _desktopBuffer.contains('\n')) {
+                List<String> lines = _desktopBuffer.split(RegExp(r'[\r\n]+'));
+                
+                // نأخذ آخر سطر مكتمل
+                String completeLine = lines.length > 1 ? lines[lines.length - 2] : lines[0];
+
+                // 3. استخراج الرقم وتجاهل قيم سرعة الاتصال
+                final matches = RegExp(r'[0-9.]+').allMatches(completeLine);
+                if (matches.isNotEmpty) {
+                  String val = matches.last.group(0)!;
+                  if (val != "9600" && val != "9200") {
+                    if (mounted) {
+                      setState(() {
+                        _weight = val;
+                      });
+                    }
+                  }
+                }
+
+                // 4. الاحتفاظ بالجزء المتبقي غير المكتمل
+                _desktopBuffer = lines.last;
               }
             });
 
-            setState(() => _isConnected = true);
+            setState(() {
+              _isConnected = true;
+              _desktopBuffer = ""; // تصفير المخزن عند البداية
+            });
           }
         } catch (e) {
           _showError("خطأ في فتح المنفذ: $e");

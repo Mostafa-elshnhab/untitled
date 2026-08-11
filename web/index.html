@@ -13,37 +13,28 @@
     let latestWeight = "0.0";
     let isConnected = false;
     let keepReading = true;
+    let buffer = ""; // مخزن مؤقت لتجميع أجزاء الوزن
 
     async function connectScale() {
-      // التأكد من أن المتصفح يدعم السيريال (الكابل) وليس البلوتوث
       if (!navigator.serial) {
-        alert("متصفحك لا يدعم الوصول للكابل (Web Serial). يرجى استخدام أحدث نسخة من Chrome أو Edge على الكمبيوتر.");
+        alert("متصفحك لا يدعم الوصول للكابل. يرجى استخدام Chrome.");
         return false;
       }
-
       try {
-        // طلب تصريح للوصول للمنفذ (هذه الدالة تفتح نافذة منافذ السيريال/الكابل)
         port = await navigator.serial.requestPort();
-
         await port.open({
           baudRate: 9600,
           dataBits: 8,
           stopBits: 1,
-          parity: "none",
-          flowControl: "none"
+          parity: "none"
         });
-
         isConnected = true;
         keepReading = true;
+        buffer = ""; // تصفير المخزن عند البداية
         startReadLoop();
-
-        console.log("تم الاتصال بالكابل بنجاح");
         return true;
       } catch (error) {
-        console.error("خطأ في الاتصال بالكابل:", error);
-        if (error.name === 'SecurityError') {
-          alert("خطأ أمني: يجب تشغيل الموقع عبر HTTPS أو Localhost للسماح باستخدام الكابل.");
-        }
+        console.error(error);
         return false;
       }
     }
@@ -56,15 +47,33 @@
           while (true) {
             const { value, done } = await reader.read();
             if (done) break;
-            const chunk = decoder.decode(value);
-            // استخراج الرقم الأخير من القراءة
-            const matches = chunk.match(/[0-9.]+/g);
-            if (matches && matches.length > 0) {
-              latestWeight = matches[matches.length - 1];
+
+            // إضافة الجزء الجديد للمخزن
+            buffer += decoder.decode(value);
+
+            // الموازين ترسل علامة نهاية سطر (غالباً \r أو \n)
+            // نبحث عن السطر المكتمل
+            if (buffer.includes('\r') || buffer.includes('\n')) {
+              let lines = buffer.split(/[\r\n]+/);
+
+              // نأخذ آخر سطر مكتمل (قبل الأخير لأن الأخير قد يكون غير مكتمل)
+              let completeLine = lines.length > 1 ? lines[lines.length - 2] : lines[0];
+
+              // استخراج الرقم فقط من السطر المكتمل
+              const matches = completeLine.match(/[0-9.]+/g);
+              if (matches && matches.length > 0) {
+                let val = matches[matches.length - 1];
+                // تجاهل سرعة الاتصال (9600) إذا ظهرت في البداية
+                if (val !== "9600" && val !== "9200") {
+                  latestWeight = val;
+                }
+              }
+
+              // الاحتفاظ بالجزء المتبقي غير المكتمل في المخزن
+              buffer = lines[lines.length - 1];
             }
           }
         } catch (error) {
-          console.error("خطأ أثناء القراءة:", error);
           isConnected = false;
           break;
         } finally {
