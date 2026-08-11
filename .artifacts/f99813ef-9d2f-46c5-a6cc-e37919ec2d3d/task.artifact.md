@@ -1,0 +1,5 @@
+- [x] Update `README.md` with project details and requirements.
+- [x] Improve `build_windows.bat` with better error messages.
+- [x] Run `flutter doctor --android-licenses`.
+- [x] Refine `lib/main.dart` error handling.
+- [x] Verify changes with `flutter doctor`.
