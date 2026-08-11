@@ -107,28 +107,43 @@ class _ScaleHomePageState extends State<ScaleHomePage> {
               final String chunk = String.fromCharCodes(data);
               _desktopBuffer += chunk;
 
-              // 2. البحث عن علامة نهاية السطر (التي يرسلها الميزان عادةً)
+              // 2. معالجة البيانات فقط عند اكتمال السطر (بناءً على \r أو \n)
               if (_desktopBuffer.contains('\r') || _desktopBuffer.contains('\n')) {
                 List<String> lines = _desktopBuffer.split(RegExp(r'[\r\n]+'));
                 
-                // نأخذ آخر سطر مكتمل
-                String completeLine = lines.length > 1 ? lines[lines.length - 2] : lines[0];
+                // نقوم بمعالجة كل الأسطر المكتملة لنصل لأحدث قراءة
+                for (int i = 0; i < lines.length - 1; i++) {
+                  String completeLine = lines[i].trim();
+                  if (completeLine.isEmpty) continue;
 
-                // 3. استخراج الرقم وتجاهل قيم سرعة الاتصال
-                final matches = RegExp(r'[0-9.]+').allMatches(completeLine);
-                if (matches.isNotEmpty) {
-                  String val = matches.last.group(0)!;
-                  if (val != "9600" && val != "9200") {
-                    if (mounted) {
-                      setState(() {
-                        _weight = val;
-                      });
+                  // 3. استخراج كافة الأرقام من السطر
+                  final matches = RegExp(r'[0-9.]+').allMatches(completeLine).toList();
+                  if (matches.isNotEmpty) {
+                    // ترتيب الأرقام حسب الطول (الأطول هو الوزن غالباً)
+                    matches.sort((a, b) => b.group(0)!.length.compareTo(a.group(0)!.length));
+                    String val = matches.first.group(0)!;
+                    
+                    // تجاهل الأرقام التي تمثل سرعة المنفذ فقط
+                    if (val != "9600" && val != "9200") {
+                      if (mounted) {
+                        setState(() {
+                          // تحويل الرقم لنص نظيف (إزالة الأصفار الزائدة والكسور)
+                          double? parsed = double.tryParse(val);
+                          if (parsed != null) {
+                            _weight = parsed.toStringAsFixed(0);
+                            _isConnected = true; 
+                          }
+                        });
+                      }
                     }
                   }
                 }
 
-                // 4. الاحتفاظ بالجزء المتبقي غير المكتمل
+                // 4. الاحتفاظ بالجزء المتبقي (غير المكتمل) للمرة القادمة
                 _desktopBuffer = lines.last;
+                
+                // منع تراكم البيانات في المخزن إذا كان كبيراً جداً
+                if (_desktopBuffer.length > 100) _desktopBuffer = "";
               }
             });
 
